@@ -1,0 +1,57 @@
+#!/bin/zsh
+
+# Exit on error e.g. unknown command
+set -e
+
+# Enable TCP module
+zmodload zsh/net/tcp
+
+# This seems to be required to load the function
+autoload -U tcp_proxy
+
+# Set server parameters
+PORT=8080
+HOST=127.0.0.1
+# TODO: if no -p is specified and 8080 is taken, then try again on a random port
+
+CRLF=$'\r\n'
+
+main() {
+	# Create a TCP listening socket
+	# This command stores the fd of the socket in $REPLY
+	# This should be closed when finished
+	ztcp -l $PORT
+	local listen_fd=$REPLY
+
+	if (( $? != 0 )); then
+		print "Failed to bind to port $PORT"
+		exit 1
+	fi
+
+	print "Server listening on $HOST:$PORT..."
+	print "http://$HOST:$PORT/"
+
+	# Main event loop
+	while true; do
+		# Wait for a connection on $listen_fd
+		# This command stores the fd of the client connection socket in $REPLY
+		ztcp -a $listen_fd
+		local client_fd=$REPLY
+		# Read one line up to CRLF
+		local line
+		read -r line <&$client_fd
+		# Echo back the line with CRLF
+		echo -n "$line\r\n" >&$client_fd
+		# Close the listening socket opened by `ztcp -a $listen_fd`
+		ztcp -c $client_fd
+	done
+
+	# Close the listening socket opened by `ztcp -l $PORT`
+	# Otherwise it may be difficult to start this process back up listening on the same port
+	ztcp -c $listen_fd
+}
+
+# Run the main event loop
+# This is just for code aesthetics so that the main loop can be defined
+# at the top of the file, and callee functions below it.
+main

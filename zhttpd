@@ -5,6 +5,8 @@ set -e
 
 # Enable TCP module
 zmodload zsh/net/tcp
+# See if this helps avoid TCP RST
+zmodload zsh/system
 
 # This seems to be required to load the function
 autoload -U tcp_proxy
@@ -15,6 +17,7 @@ HOST=127.0.0.1
 # TODO: if no -p is specified and 8080 is taken, then try again on a random port
 
 CRLF=$'\r\n'
+SERVER="zhttpd/0.0.0 (<https://github.com/awwright/zhttpd>) zsh/$(zsh --version|cut -c 5-)"
 
 main() {
 	# Create a TCP listening socket
@@ -23,7 +26,8 @@ main() {
 	ztcp -l $PORT
 	local listen_fd=$REPLY
 
-	if (( $? != 0 )); then
+	debug main "listen_fd=$listen_fd"
+	if (( $listen_fd == 0 )); then
 		print "Failed to bind to port $PORT"
 		exit 1
 	fi
@@ -32,23 +36,118 @@ main() {
 	print "http://$HOST:$PORT/"
 
 	# Main event loop
+	# TODO: use zselect
+	# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
 	while true; do
 		# Wait for a connection on $listen_fd
 		# This command stores the fd of the client connection socket in $REPLY
 		ztcp -a $listen_fd
 		local client_fd=$REPLY
-		# Read one line up to CRLF
-		local line
-		read -r line <&$client_fd
+
+		# request-line = method SP request-target SP HTTP-version
+		local request_method=
+		read -rsd ' ' request_method <&$client_fd
+		debug $client_fd "request_method: $request_method"
+		# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+		#       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+		#       / DIGIT / ALPHA
+		if [[ ! $request_method =~ '[!#\$%&\x27\*\+\-\.\^_\`|~0-9a-zA-Z]+' ]]; then
+			handle_client_error $client_fd $LINENO "Malformed method"
+			return
+		fi
+
+		local request_target=
+		read -rsd ' ' request_target <&$client_fd
+		debug $client_fd "request_target: $request_target"
+		# TODO: Parse and classify this
+		if [[ ! $request_target =~ "[!-~]+" ]]; then
+			handle_client_error $client_fd $LINENO "Malformed request-target"
+			return
+		fi
+
+		local request_http_version=
+		read -rsd $CRLF request_http_version <&$client_fd
+		debug $client_fd "request_http_version: $request_http_version"
+		if [[ ! $request_http_version =~ "HTTP/[0-9]\.[0-9]" ]]; then
+			handle_client_error $client_fd $LINENO "Malformed HTTP-version"
+			return
+		fi
+		if [[ ! $request_http_version =~ "HTTP/1\.[0-9]" ]]; then
+			handle_client_error $client_fd $LINENO "Unsupported HTTP version: $request_http_version"
+			return
+		fi
+
+		# Read until end of request
+		while true; do
+			local request_field=
+			read -rsd $CRLF request_field <&$client_fd
+			# Stop parsing at first blank line
+			if [[ -z "$request_field" ]]; then break; fi
+			debug $client_fd "Have field: $request_field"
+		done
+		debug $client_fd "Have full request"
+
 		# Echo back the line with CRLF
-		echo -n "$line\r\n" >&$client_fd
+		write_line $client_fd "HTTP/1.0 200 OK"
+		write_line $client_fd "Server: $SERVER"
+		write_line $client_fd "Content-Type: text/plain"
+		write_line $client_fd ""
+		write_line $client_fd "Process request:"
+		write_line $client_fd "request_method: $request_method"
+		write_line $client_fd "request_target: $request_target"
+		write_line $client_fd "request_http_version: $request_http_version"
 		# Close the listening socket opened by `ztcp -a $listen_fd`
-		ztcp -c $client_fd
+		write_end $client_fd
 	done
 
 	# Close the listening socket opened by `ztcp -l $PORT`
 	# Otherwise it may be difficult to start this process back up listening on the same port
 	ztcp -c $listen_fd
+}
+
+handle_client_error() {
+	local client_fd=$1
+	write_line $client_fd "HTTP/1.0 400 Client Error"
+	write_line $client_fd "Server: $SERVER"
+	write_line $client_fd "Content-Type: text/plain"
+	write_line $client_fd ""
+	write_line $client_fd "zhttpd error #$2"
+	write_line $client_fd "$3"
+	write_end
+}
+
+write_header() {
+	local client_fd=$1
+	local name=$2
+	local value=$3
+	# Todo: Verify that $client_fd is in the headers state
+	# Todo: Verify that $name follows `token`
+	# Todo: Verify that $value follows the header syntax
+	echo -n "$name: $value$CRLF" >&$client_fd
+}
+
+write_line() {
+	local client_fd=$1
+	echo -n "$2$CRLF" >&$client_fd
+}
+
+write_end() {
+	local client_fd=$1
+	debug $client_fd "[End]"
+	# Ensure that all data on the incoming buffer is read, otherwise this will send RST
+	local remaining=
+	# Read 0 bytes before closing, in order to mark the incoming buffer as emptied
+	# Otherwise TCP will send RST instead of FIN
+	read -r remaining <&$client_fd
+	if [[ -n "$remaining" ]]; then
+		debug $client_fd "Unread bytes: ${#remaining}"
+	fi
+	ztcp -c $client_fd
+}
+
+debug() {
+	local client_fd=$1
+	echo "[$1] $2"
 }
 
 # Run the main event loop

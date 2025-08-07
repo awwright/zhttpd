@@ -6,6 +6,7 @@
 * CGI responses
 * Request forwarding for gateway/proxy use
 * Support for TLS if stunnel is installed (maybe openssl)
+	https://www.stunnel.org/static/stunnel.html#INETD-MODE
 * Multithreading support (one fork per request)
 
 ## Code Modules
@@ -18,7 +19,8 @@ zhttpd
 	[-p <port>]
 	[--sock <file>]
 	[--hub <host:port>]
-	[-d <directory>]
+	[-r <directory>]
+	[-d]
 ```
 
 ### Logging
@@ -53,6 +55,10 @@ Use the given TLS key to authenticate to the hub
 
 ## Routing/Serving Options
 
+### `-d`
+
+Enable debug mode; shows more sophisticated errors in the response as well as the console.
+
 ### `-c <config.conf>`
 
 Load routes from <config.conf>.
@@ -84,6 +90,8 @@ Serve files with filenames ending in <suffix> with `Content-Type: <type>`
 ```
 base = <http://example.com/> ; resolve relative URIs against this URI
 
+# In the event of overlaps, the FIRST entry is evaluated
+
 # Serve static files
 <http://localhost/file/{id}>
 	serve = file
@@ -113,5 +121,15 @@ http://{authority}/{+path}
 	serve = forward
 	forward_inbound = {authority}
     forward_path = {+path}
+
+# Serve a page describing the status of the server
+http://localhost/about:status
+	serve = status
+
+# Serve PHP files
+http://localhost/{+file}.php
+	serve = cgi
+	cgi_exe = /usr/bin/php
+	cgi_pathinfo = /{+file}.php
 ```
 

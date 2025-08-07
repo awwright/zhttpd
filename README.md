@@ -1,9 +1,9 @@
 
 # zHTTPd: HTTP server written in zsh
 
-A self-contained Web/HTTP server designed for static files, proxying/inspecting traffic, and supporting CGI and FastCGI.
+a.k.a. awwright-zhttpd
 
-It is entirely self-contained in a single file, and guaranteed to work out of the box in all macOS systems.
+A self-contained Web/HTTP server designed to run out of the box on macOS.
 
 Features:
 
@@ -16,6 +16,8 @@ Features:
 
 ## Usage
 
+```
 zhttpd
 	[-p <port>]
 	[-d <directory>]
+```

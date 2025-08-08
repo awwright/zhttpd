@@ -3,10 +3,10 @@
 # Exit on error e.g. unknown command
 set -e
 
-# Enable TCP module
+# Load ztcp, for opening TCP ports
 zmodload zsh/net/tcp
-# See if this helps avoid TCP RST
-zmodload zsh/system
+# Load zparseopts
+zmodload zsh/zutil
 
 # This seems to be required to load the function
 autoload -U tcp_proxy
@@ -149,6 +149,32 @@ debug() {
 	local client_fd=$1
 	echo "[$1] $2"
 }
+
+# Function to display usage
+usage() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  -?, --help         Display this help message"
+    echo "  --version          Print version"
+    exit 1
+}
+
+zparseopts -F '?'=opt_help -help=opt_help -version=opt_version || {
+    echo ""
+    usage
+	exit 1
+}
+
+# Handle help option
+if [[ -n $opt_help ]]; then
+    usage
+	exit
+fi
+
+if [[ -n $opt_version ]]; then
+    echo $SERVER
+	exit
+fi
 
 # Run the main event loop
 # This is just for code aesthetics so that the main loop can be defined

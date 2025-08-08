@@ -156,10 +156,11 @@ usage() {
     echo "Options:"
     echo "  -?, --help         Display this help message"
     echo "  --version          Print version"
+    echo "  -p, --port=<port>      Listen for HTTP requests on <port>"
     exit 1
 }
 
-zparseopts -F '?'=opt_help -help=opt_help -version=opt_version || {
+zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port'  || {
     echo ""
     usage
 	exit 1
@@ -174,6 +175,11 @@ fi
 if [[ -n $opt_version ]]; then
     echo $SERVER
 	exit
+fi
+
+# Trim the leading =, zsh seems to allow --port8080 like a madman
+if [[ -n "${opt_port[2]}" && "${opt_port[2]//=}" =~ '^[0-9]+$' ]]; then
+    PORT=$MATCH
 fi
 
 # Run the main event loop

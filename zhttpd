@@ -51,7 +51,7 @@ main() {
 		# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
 		#       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
 		#       / DIGIT / ALPHA
-		if [[ ! $request_method =~ '[!#\$%&\x27\*\+\-\.\^_\`|~0-9a-zA-Z]+' ]]; then
+		if [[ ! $request_method =~ '^[!#\$%&\x27\*\+\-\.\^_\`|~0-9a-zA-Z]+$' ]]; then
 			handle_client_error $client_fd $LINENO "Malformed method"
 			return
 		fi
@@ -60,7 +60,7 @@ main() {
 		read -rsd ' ' request_target <&$client_fd
 		debug $client_fd "request_target: $request_target"
 		# TODO: Parse and classify this
-		if [[ ! $request_target =~ "[!-~]+" ]]; then
+		if [[ ! $request_target =~ "^[!-~]+$" ]]; then
 			handle_client_error $client_fd $LINENO "Malformed request-target"
 			return
 		fi
@@ -68,11 +68,11 @@ main() {
 		local request_http_version=
 		read -rsd $CRLF request_http_version <&$client_fd
 		debug $client_fd "request_http_version: $request_http_version"
-		if [[ ! $request_http_version =~ "HTTP/[0-9]\.[0-9]" ]]; then
+		if [[ ! $request_http_version =~ "^HTTP/[0-9]\.[0-9]$" ]]; then
 			handle_client_error $client_fd $LINENO "Malformed HTTP-version"
 			return
 		fi
-		if [[ ! $request_http_version =~ "HTTP/1\.[0-9]" ]]; then
+		if [[ ! $request_http_version =~ "^HTTP/1\.[0-9]$" ]]; then
 			handle_client_error $client_fd $LINENO "Unsupported HTTP version: $request_http_version"
 			return
 		fi

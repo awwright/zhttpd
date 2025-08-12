@@ -17,7 +17,7 @@ Features:
 ## Usage
 
 ```
-zhttpd
-	[-p <port>]
-	[-d <directory>]
+zhttpd --help
+zhttpd --version
+zhttpd [--port <port>]
 ```

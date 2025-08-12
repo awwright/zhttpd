@@ -14,6 +14,7 @@ autoload -U tcp_proxy
 # Set server parameters
 PORT=8080
 HOST=127.0.0.1
+HTROOT="$(pwd)"
 # TODO: if no -p is specified and 8080 is taken, then try again on a random port
 
 CRLF=$'\r\n'
@@ -87,17 +88,68 @@ main() {
 		done
 		debug $client_fd "Have full request"
 
+		if [[ "$request_target" =~ '^/about:status/' ]]; then
+			write_line $client_fd "HTTP/1.0 200 OK"
+			write_line $client_fd "Server: $SERVER"
+			write_line $client_fd "Content-Type: text/plain"
+			write_line $client_fd ""
+			write_line $client_fd "Process request:"
+			write_line $client_fd "request_method: $request_method"
+			write_line $client_fd "request_target: $request_target"
+			write_line $client_fd "request_http_version: $request_http_version"
+			write_end $client_fd
+			continue;
+		fi
+
 		# Echo back the line with CRLF
-		write_line $client_fd "HTTP/1.0 200 OK"
-		write_line $client_fd "Server: $SERVER"
-		write_line $client_fd "Content-Type: text/plain"
-		write_line $client_fd ""
-		write_line $client_fd "Process request:"
-		write_line $client_fd "request_method: $request_method"
-		write_line $client_fd "request_target: $request_target"
-		write_line $client_fd "request_http_version: $request_http_version"
-		# Close the listening socket opened by `ztcp -a $listen_fd`
-		write_end $client_fd
+		local filepath=$(realpath "$HTROOT$request_target")
+		if [[ -z "$filepath" ]]; then
+			write_line $client_fd "HTTP/1.0 404 Not Found"
+			write_line $client_fd "Server: $SERVER"
+			write_line $client_fd "Content-Type: text/plain"
+			write_line $client_fd ""
+			write_line $client_fd "Not Found: $filepath"
+			# Close the listening socket opened by `ztcp -a $listen_fd`
+			write_end $client_fd
+			continue
+		fi
+		if [[ !  "$filepath" = "$HTROOT"* ]]; then
+			handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
+			continue;
+		fi
+
+		if [[ -f "$filepath" ]] then
+			write_line $client_fd "HTTP/1.0 200 OK"
+			write_line $client_fd "Server: $SERVER"
+			write_line $client_fd "Content-Type: text/plain"
+			write_line $client_fd ""
+			# write_line $client_fd "Process request:"
+			# write_line $client_fd "request_method: $request_method"
+			# write_line $client_fd "request_target: $request_target"
+			# write_line $client_fd "request_http_version: $request_http_version"
+			write_file $client_fd "$filepath"
+			# Close the listening socket opened by `ztcp -a $listen_fd`
+			write_end $client_fd
+			continue
+		elif [[ -d "$filepath" ]] then
+			write_line $client_fd "HTTP/1.0 200 OK"
+			write_line $client_fd "Server: $SERVER"
+			write_line $client_fd "Content-Type: text/plain"
+			write_line $client_fd ""
+			ls -1 -- "$filepath" >&$client_fd
+			write_line $client_fd ""
+			write_end $client_fd
+			continue
+		else
+			write_line $client_fd "HTTP/1.0 404 Not Found"
+			write_line $client_fd "Server: $SERVER"
+			write_line $client_fd "Content-Type: text/plain"
+			write_line $client_fd ""
+			write_line $client_fd "Not Found: $filepath"
+			# Close the listening socket opened by `ztcp -a $listen_fd`
+			write_end $client_fd
+			continue
+		fi
 	done
 
 	# Close the listening socket opened by `ztcp -l $PORT`
@@ -113,7 +165,7 @@ handle_client_error() {
 	write_line $client_fd ""
 	write_line $client_fd "zhttpd error #$2"
 	write_line $client_fd "$3"
-	write_end
+	write_end $client_fd
 }
 
 write_header() {
@@ -129,6 +181,12 @@ write_header() {
 write_line() {
 	local client_fd=$1
 	echo -n "$2$CRLF" >&$client_fd
+}
+
+write_file() {
+	local client_fd=$1
+	local file_path=$2
+	dd if="$file_path" >&$client_fd
 }
 
 write_end() {
@@ -172,6 +230,8 @@ if [[ -n $opt_help ]]; then
 	exit
 fi
 
+# Print server version if --version is specified.
+# This is the same string sent in the Server header.
 if [[ -n $opt_version ]]; then
     echo $SERVER
 	exit

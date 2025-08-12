@@ -131,5 +131,13 @@ http://localhost/{+file}.php
 	serve = cgi
 	cgi_exe = /usr/bin/php
 	cgi_pathinfo = /{+file}.php
+
+# Forward request to clients connected on the given port
+# If no clients are connected, this serves 503 Service Unavailable
+http://localhost/{+file}.php
+	serve = hub
+	hub_listen_port = 57456
+	hub_request_form = origin-form
+	hub_request_uri = http://localhost/{+file}.php
 ```
 

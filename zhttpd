@@ -104,13 +104,7 @@ main() {
 		# Echo back the line with CRLF
 		local filepath=$(realpath "$HTROOT$request_target")
 		if [[ -z "$filepath" ]]; then
-			write_line $client_fd "HTTP/1.0 404 Not Found"
-			write_line $client_fd "Server: $SERVER"
-			write_line $client_fd "Content-Type: text/plain"
-			write_line $client_fd ""
-			write_line $client_fd "Not Found: $filepath"
-			# Close the listening socket opened by `ztcp -a $listen_fd`
-			write_end $client_fd
+			handle_not_found $client_fd "$filepath"
 			continue
 		fi
 		if [[ !  "$filepath" = "$HTROOT"* ]]; then
@@ -123,10 +117,6 @@ main() {
 			write_line $client_fd "Server: $SERVER"
 			write_line $client_fd "Content-Type: text/plain"
 			write_line $client_fd ""
-			# write_line $client_fd "Process request:"
-			# write_line $client_fd "request_method: $request_method"
-			# write_line $client_fd "request_target: $request_target"
-			# write_line $client_fd "request_http_version: $request_http_version"
 			write_file $client_fd "$filepath"
 			# Close the listening socket opened by `ztcp -a $listen_fd`
 			write_end $client_fd
@@ -141,13 +131,7 @@ main() {
 			write_end $client_fd
 			continue
 		else
-			write_line $client_fd "HTTP/1.0 404 Not Found"
-			write_line $client_fd "Server: $SERVER"
-			write_line $client_fd "Content-Type: text/plain"
-			write_line $client_fd ""
-			write_line $client_fd "Not Found: $filepath"
-			# Close the listening socket opened by `ztcp -a $listen_fd`
-			write_end $client_fd
+			handle_not_found $client_fd "$filepath"
 			continue
 		fi
 	done
@@ -165,6 +149,16 @@ handle_client_error() {
 	write_line $client_fd ""
 	write_line $client_fd "zhttpd error #$2"
 	write_line $client_fd "$3"
+	write_end $client_fd
+}
+
+handle_not_found() {
+	local client_fd=$1
+	write_line $client_fd "HTTP/1.0 404 Not Found"
+	write_line $client_fd "Server: $SERVER"
+	write_line $client_fd "Content-Type: text/plain"
+	write_line $client_fd ""
+	write_line $client_fd "File Not Found: $3"
 	write_end $client_fd
 }
 

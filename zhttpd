@@ -89,10 +89,10 @@ main() {
 		debug $client_fd "Have full request"
 
 		if [[ "$request_target" =~ '^/about:status/' ]]; then
-			write_line $client_fd "HTTP/1.0 200 OK"
-			write_line $client_fd "Server: $SERVER"
-			write_line $client_fd "Content-Type: text/plain"
-			write_line $client_fd ""
+			write_resl $client_fd 200 "OK"
+			write_line $client_fd "Server" "$SERVER"
+			write_line $client_fd "Content-Type" "text/plain"
+			write_hend $client_fd
 			write_line $client_fd "Process request:"
 			write_line $client_fd "request_method: $request_method"
 			write_line $client_fd "request_target: $request_target"
@@ -113,19 +113,19 @@ main() {
 		fi
 
 		if [[ -f "$filepath" ]] then
-			write_line $client_fd "HTTP/1.0 200 OK"
-			write_line $client_fd "Server: $SERVER"
-			write_line $client_fd "Content-Type: text/plain"
-			write_line $client_fd ""
+			write_resl $client_fd 200 "OK"
+			write_line $client_fd "Server" "$SERVER"
+			write_line $client_fd "Content-Type" "text/plain"
+			write_hend $client_fd
 			write_file $client_fd "$filepath"
 			# Close the listening socket opened by `ztcp -a $listen_fd`
 			write_end $client_fd
 			continue
 		elif [[ -d "$filepath" ]] then
-			write_line $client_fd "HTTP/1.0 200 OK"
-			write_line $client_fd "Server: $SERVER"
-			write_line $client_fd "Content-Type: text/plain"
-			write_line $client_fd ""
+			write_resl $client_fd 200 "OK"
+			write_line $client_fd "Server" "$SERVER"
+			write_line $client_fd "Content-Type" "text/plain"
+			write_hend $client_fd
 			ls -1 -- "$filepath" >&$client_fd
 			write_line $client_fd ""
 			write_end $client_fd
@@ -143,10 +143,10 @@ main() {
 
 handle_client_error() {
 	local client_fd=$1
-	write_line $client_fd "HTTP/1.0 400 Client Error"
-	write_line $client_fd "Server: $SERVER"
-	write_line $client_fd "Content-Type: text/plain"
-	write_line $client_fd ""
+	write_resl $client_fd 400 "Client Error"
+	write_line $client_fd "Server" "$SERVER"
+	write_line $client_fd "Content-Type" "text/plain"
+	write_hend $client_fd
 	write_line $client_fd "zhttpd error #$2"
 	write_line $client_fd "$3"
 	write_end $client_fd
@@ -154,15 +154,22 @@ handle_client_error() {
 
 handle_not_found() {
 	local client_fd=$1
-	write_line $client_fd "HTTP/1.0 404 Not Found"
-	write_line $client_fd "Server: $SERVER"
-	write_line $client_fd "Content-Type: text/plain"
-	write_line $client_fd ""
+	write_resl $client_fd 404 "Not Found"
+	write_fiel $client_fd "Server" "$SERVER"
+	write_fiel $client_fd "Content-Type" "text/plain"
+	write_hend $client_fd
 	write_line $client_fd "File Not Found: $3"
 	write_end $client_fd
 }
 
-write_header() {
+# Write response-line
+write_resl() {
+	local client_fd=$1
+	echo -n "HTTP/1.0 $2 $3$CRLF" >&$client_fd
+}
+
+# Write header field
+write_fiel() {
 	local client_fd=$1
 	local name=$2
 	local value=$3
@@ -170,6 +177,11 @@ write_header() {
 	# Todo: Verify that $name follows `token`
 	# Todo: Verify that $value follows the header syntax
 	echo -n "$name: $value$CRLF" >&$client_fd
+}
+
+write_hend() {
+	local client_fd=$1
+	echo -n "$CRLF" >&$client_fd
 }
 
 write_line() {

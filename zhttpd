@@ -69,7 +69,10 @@ main() {
 		fi
 
 		local request_http_version=
-		read -rsd $CRLF request_http_version <&$client_fd
+		local empty=
+		read -rsd $CR request_http_version <&$client_fd || true
+		read -rsd $LF empty <&$client_fd || true
+		if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
 		debug $client_fd "request_http_version: $request_http_version"
 		if [[ ! $request_http_version =~ "^HTTP/[0-9]\.[0-9]$" ]]; then
 			handle_client_error $client_fd $LINENO "Malformed HTTP-version"
@@ -83,17 +86,20 @@ main() {
 		# Read until end of request
 		while true; do
 			local request_field=
-			read -rsd $CRLF request_field <&$client_fd
+			local empty=
+			read -rsd $CR request_field <&$client_fd || true
+			read -rsd $LF empty <&$client_fd || true
+			if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
 			# Stop parsing at first blank line
 			if [[ -z "$request_field" ]]; then break; fi
-			debug $client_fd "Have field: $request_field"
+			debug $client_fd "Have field: $request_field ${#request_field}"
 		done
 		debug $client_fd "Have full request"
 
 		if [[ "$request_target" =~ '^/about:status/' ]]; then
 			write_resl $client_fd 200 "OK"
-			write_line $client_fd "Server" "$SERVER"
-			write_line $client_fd "Content-Type" "text/plain"
+			write_fiel $client_fd "Server" "$SERVER"
+			write_fiel $client_fd "Content-Type" "text/plain"
 			write_hend $client_fd
 			write_line $client_fd "Process request:"
 			write_line $client_fd "request_method: $request_method"
@@ -119,8 +125,8 @@ main() {
 
 		if [[ -f "$filepath" ]] then
 			write_resl $client_fd 200 "OK"
-			write_line $client_fd "Server" "$SERVER"
-			write_line $client_fd "Content-Type" "text/plain"
+			write_fiel $client_fd "Server" "$SERVER"
+			write_fiel $client_fd "Content-Type" "text/plain"
 			write_hend $client_fd
 			write_file $client_fd "$filepath"
 			# Close the listening socket opened by `ztcp -a $listen_fd`
@@ -128,8 +134,8 @@ main() {
 			continue
 		elif [[ -d "$filepath" ]] then
 			write_resl $client_fd 200 "OK"
-			write_line $client_fd "Server" "$SERVER"
-			write_line $client_fd "Content-Type" "text/plain"
+			write_fiel $client_fd "Server" "$SERVER"
+			write_fiel $client_fd "Content-Type" "text/plain"
 			write_hend $client_fd
 			ls -1 -- "$filepath" >&$client_fd
 			write_line $client_fd ""
@@ -149,8 +155,8 @@ main() {
 handle_client_error() {
 	local client_fd=$1
 	write_resl $client_fd 400 "Client Error"
-	write_line $client_fd "Server" "$SERVER"
-	write_line $client_fd "Content-Type" "text/plain"
+	write_fiel $client_fd "Server" "$SERVER"
+	write_fiel $client_fd "Content-Type" "text/plain"
 	write_hend $client_fd
 	write_line $client_fd "zhttpd error #$2"
 	write_line $client_fd "$3"
@@ -186,10 +192,6 @@ handle_cgi() {
 			debug $client_fd "Have CGI response field: $cgi_response_field"
 		done
 		debug $client_fd "Have CGI response body"
-
-		# read -rsd $CRLF cgi_response_field
-		# debug $client_fd "CGI extra: $cgi_response_field"
-
 		write_resl $client_fd 200 "OK"
 		write_fiel $client_fd "content-type" "text/plain"
 		write_hend $client_fd
@@ -238,12 +240,6 @@ write_end() {
 	debug $client_fd "[End]"
 	# Ensure that all data on the incoming buffer is read, otherwise this will send RST
 	local remaining=
-	# Read 0 bytes before closing, in order to mark the incoming buffer as emptied
-	# Otherwise TCP will send RST instead of FIN
-	read -r remaining <&$client_fd
-	if [[ -n "$remaining" ]]; then
-		debug $client_fd "Unread bytes: ${#remaining}"
-	fi
 	ztcp -c $client_fd
 }
 

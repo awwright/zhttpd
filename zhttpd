@@ -17,6 +17,8 @@ HOST=127.0.0.1
 HTROOT="$(pwd)"
 # TODO: if no -p is specified and 8080 is taken, then try again on a random port
 
+CR=$'\r'
+LF=$'\n'
 CRLF=$'\r\n'
 SERVER="zhttpd/0.0.0 (<https://github.com/awwright/zhttpd>) zsh/$(zsh --version|cut -c 5-)"
 
@@ -101,6 +103,9 @@ main() {
 			continue;
 		fi
 
+		#handle_cgi $client_fd "./eng.cgi"
+		#continue;
+
 		# Echo back the line with CRLF
 		local filepath=$(realpath "$HTROOT$request_target")
 		if [[ -z "$filepath" ]]; then
@@ -160,6 +165,39 @@ handle_not_found() {
 	write_hend $client_fd
 	write_line $client_fd "File Not Found: $3"
 	write_end $client_fd
+}
+
+handle_cgi() {
+	local client_fd=$1
+	local cgi_cmd=$2
+	local cgi_response_field=
+	local empty=
+	local status_code=500
+	while true; do
+		while true; do
+			read -rsd $CR cgi_response_field || true
+			read -rsd $LF empty || true
+			if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
+			# Stop parsing at first blank line
+			if [[ -z "$cgi_response_field" ]]; then break; fi
+			if [[ "$cgi_response_field" =~ "^[Ss][Tt][Aa][Tt][Uu][Ss]:[ 	]*" ]]; then
+				status_code=200
+			fi
+			debug $client_fd "Have CGI response field: $cgi_response_field"
+		done
+		debug $client_fd "Have CGI response body"
+
+		# read -rsd $CRLF cgi_response_field
+		# debug $client_fd "CGI extra: $cgi_response_field"
+
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "content-type" "text/plain"
+		write_hend $client_fd
+		cat >&$client_fd
+		write_end $client_fd
+		break
+	done < <($cgi_cmd)
+	debug $client_fd "Sent off CGI response"
 }
 
 # Write response-line

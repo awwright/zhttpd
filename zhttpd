@@ -21,8 +21,25 @@ CR=$'\r'
 LF=$'\n'
 CRLF=$'\r\n'
 SERVER="zhttpd/0.0.0 (<https://github.com/awwright/zhttpd>) zsh/$(zsh --version|cut -c 5-)"
+MIME_TYPES_PATH="/etc/apache2/mime.types"
+DEFAULT_MEDIA_TYPE="application/octet-stream"
 
 main() {
+	typeset -A ext_mediatype
+	if [[ -f "$MIME_TYPES_PATH" ]]; then
+		while IFS=$'\t ' read -r mt extensions; do
+			# Skip blank lines and comments
+			[[ -z $mt || $mt == '#'* ]] && continue
+			# Split extensions and map each to the MIME type
+			for ext in ${(s: :)extensions}; do
+				#echo "${ext:l} -> $mt"
+				ext_mediatype[${ext:l}]=$mt
+			done
+		done < "$MIME_TYPES_PATH"
+	else
+		echo "Error: mime.types file not found" >&2
+	fi
+
 	# Create a TCP listening socket
 	# This command stores the fd of the socket in $REPLY
 	# This should be closed when finished
@@ -126,15 +143,9 @@ main() {
 		if [[ -f "$filepath" ]] then
 			write_resl $client_fd 200 "OK"
 			write_fiel $client_fd "Server" "$SERVER"
-			# TODO make this configurable
-			local ct=
-			case ${filepath:e} in
-				html)  ct="text/html" ;;
-				xhtml) ct="application/xhtml+xml" ;;
-				css)   ct="text/css" ;;
-				js)    ct="application/ecmascript" ;;
-				*)     ct="application/octet-stream" ;;
-			esac
+			# Get the file extension, lowercase
+			local ext=${${filepath:e}:l}
+			local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
 			write_fiel $client_fd "Content-Type" "$ct"
 			write_hend $client_fd
 			write_file $client_fd "$filepath"

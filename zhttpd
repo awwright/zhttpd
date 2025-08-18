@@ -126,7 +126,16 @@ main() {
 		if [[ -f "$filepath" ]] then
 			write_resl $client_fd 200 "OK"
 			write_fiel $client_fd "Server" "$SERVER"
-			write_fiel $client_fd "Content-Type" "text/plain"
+			# TODO make this configurable
+			local ct=
+			case ${filepath:e} in
+				html)  ct="text/html" ;;
+				xhtml) ct="application/xhtml+xml" ;;
+				css)   ct="text/css" ;;
+				js)    ct="application/ecmascript" ;;
+				*)     ct="application/octet-stream" ;;
+			esac
+			write_fiel $client_fd "Content-Type" "$ct"
 			write_hend $client_fd
 			write_file $client_fd "$filepath"
 			# Close the listening socket opened by `ztcp -a $listen_fd`
@@ -173,6 +182,10 @@ handle_not_found() {
 	write_end $client_fd
 }
 
+# <https://datatracker.ietf.org/doc/html/rfc3875>
+# CGI boils down to:
+# Read HTTP headers from environment variables
+# Write back HTTP/1.0 response with a Status header instead of a status-line
 handle_cgi() {
 	local client_fd=$1
 	local cgi_cmd=$2

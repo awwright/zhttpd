@@ -63,113 +63,117 @@ main() {
 		# This command stores the fd of the client connection socket in $REPLY
 		ztcp -a $listen_fd
 		local client_fd=$REPLY
-
-		# request-line = method SP request-target SP HTTP-version
-		local request_method=
-		read -rsd ' ' request_method <&$client_fd
-		debug $client_fd "request_method: $request_method"
-		# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
-		#       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
-		#       / DIGIT / ALPHA
-		if [[ ! $request_method =~ '^[!#\$%&\x27\*\+\-\.\^_\`|~0-9a-zA-Z]+$' ]]; then
-			handle_client_error $client_fd $LINENO "Malformed method"
-			return
-		fi
-
-		local request_target=
-		read -rsd ' ' request_target <&$client_fd
-		debug $client_fd "request_target: $request_target"
-		# TODO: Parse and classify this
-		if [[ ! $request_target =~ "^[!-~]+$" ]]; then
-			handle_client_error $client_fd $LINENO "Malformed request-target"
-			return
-		fi
-
-		local request_http_version=
-		local empty=
-		read -rsd $CR request_http_version <&$client_fd || true
-		read -rsd $LF empty <&$client_fd || true
-		if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
-		debug $client_fd "request_http_version: $request_http_version"
-		if [[ ! $request_http_version =~ "^HTTP/[0-9]\.[0-9]$" ]]; then
-			handle_client_error $client_fd $LINENO "Malformed HTTP-version"
-			return
-		fi
-		if [[ ! $request_http_version =~ "^HTTP/1\.[0-9]$" ]]; then
-			handle_client_error $client_fd $LINENO "Unsupported HTTP version: $request_http_version"
-			return
-		fi
-
-		# Read until end of request
-		while true; do
-			local request_field=
-			local empty=
-			read -rsd $CR request_field <&$client_fd || true
-			read -rsd $LF empty <&$client_fd || true
-			if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
-			# Stop parsing at first blank line
-			if [[ -z "$request_field" ]]; then break; fi
-			debug $client_fd "Have field: $request_field ${#request_field}"
-		done
-		debug $client_fd "Have full request"
-
-		if [[ "$request_target" =~ '^/about:status/' ]]; then
-			write_resl $client_fd 200 "OK"
-			write_fiel $client_fd "Server" "$SERVER"
-			write_fiel $client_fd "Content-Type" "text/plain"
-			write_hend $client_fd
-			write_line $client_fd "Process request:"
-			write_line $client_fd "request_method: $request_method"
-			write_line $client_fd "request_target: $request_target"
-			write_line $client_fd "request_http_version: $request_http_version"
-			write_end $client_fd
-			continue;
-		fi
-
-		#handle_cgi $client_fd "./eng.cgi"
-		#continue;
-
-		# Echo back the line with CRLF
-		local filepath=$(realpath "$HTROOT$request_target")
-		if [[ -z "$filepath" ]]; then
-			handle_not_found $client_fd "$filepath"
-			continue
-		fi
-		if [[ !  "$filepath" = "$HTROOT"* ]]; then
-			handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
-			continue;
-		fi
-
-		if [[ -f "$filepath" ]] then
-			write_resl $client_fd 200 "OK"
-			write_fiel $client_fd "Server" "$SERVER"
-			# Get the file extension, lowercase
-			local ext=${${filepath:e}:l}
-			local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
-			write_fiel $client_fd "Content-Type" "$ct"
-			write_hend $client_fd
-			write_file $client_fd "$filepath"
-			# Close the listening socket opened by `ztcp -a $listen_fd`
-			write_end $client_fd
-			continue
-		elif [[ -d "$filepath" ]] then
-			write_resl $client_fd 200 "OK"
-			write_fiel $client_fd "Server" "$SERVER"
-			write_fiel $client_fd "Content-Type" "text/plain"
-			write_hend $client_fd
-			ls -1 -- "$filepath" >&$client_fd
-			write_line $client_fd ""
-			write_end $client_fd
-			continue
-		else
-			handle_not_found $client_fd "$filepath"
-			continue
-		fi
+		handle_client $client_fd
 	done
 
 	# Close the listening socket opened by `ztcp -l $PORT`
 	# Otherwise it may be difficult to start this process back up listening on the same port
 	ztcp -c $listen_fd
+}
+
+# New function to handle a single client connection, including persistent requests
+handle_client() {
+	# request-line = method SP request-target SP HTTP-version
+	local request_method=
+	read -rsd ' ' request_method <&$client_fd
+	debug $client_fd "request_method: $request_method"
+	# tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*"
+	#       / "+" / "-" / "." / "^" / "_" / "`" / "|" / "~"
+	#       / DIGIT / ALPHA
+	if [[ ! $request_method =~ '^[!#\$%&\x27\*\+\-\.\^_\`|~0-9a-zA-Z]+$' ]]; then
+		handle_client_error $client_fd $LINENO "Malformed method"
+		return
+	fi
+
+	local request_target=
+	read -rsd ' ' request_target <&$client_fd
+	debug $client_fd "request_target: $request_target"
+	# TODO: Parse and classify this
+	if [[ ! $request_target =~ "^[!-~]+$" ]]; then
+		handle_client_error $client_fd $LINENO "Malformed request-target"
+		return
+	fi
+
+	local request_http_version=
+	local empty=
+	read -rsd $CR request_http_version <&$client_fd || true
+	read -rsd $LF empty <&$client_fd || true
+	if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
+	debug $client_fd "request_http_version: $request_http_version"
+	if [[ ! $request_http_version =~ "^HTTP/[0-9]\.[0-9]$" ]]; then
+		handle_client_error $client_fd $LINENO "Malformed HTTP-version"
+		return
+	fi
+	if [[ ! $request_http_version =~ "^HTTP/1\.[0-9]$" ]]; then
+		handle_client_error $client_fd $LINENO "Unsupported HTTP version: $request_http_version"
+		return
+	fi
+
+	# Read until end of request
+	while true; do
+		local request_field=
+		local empty=
+		read -rsd $CR request_field <&$client_fd || true
+		read -rsd $LF empty <&$client_fd || true
+		if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
+		# Stop parsing at first blank line
+		if [[ -z "$request_field" ]]; then break; fi
+		debug $client_fd "Have field: $request_field ${#request_field}"
+	done
+	debug $client_fd "Have full request"
+
+	if [[ "$request_target" =~ '^/about:status/' ]]; then
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "Server" "$SERVER"
+		write_fiel $client_fd "Content-Type" "text/plain"
+		write_hend $client_fd
+		write_line $client_fd "Process request:"
+		write_line $client_fd "request_method: $request_method"
+		write_line $client_fd "request_target: $request_target"
+		write_line $client_fd "request_http_version: $request_http_version"
+		write_end $client_fd
+		continue;
+	fi
+
+	#handle_cgi $client_fd "./eng.cgi"
+	#continue;
+
+	# Echo back the line with CRLF
+	local filepath=$(realpath "$HTROOT$request_target")
+	if [[ -z "$filepath" ]]; then
+		handle_not_found $client_fd "$filepath"
+		continue
+	fi
+	if [[ !  "$filepath" = "$HTROOT"* ]]; then
+		handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
+		continue;
+	fi
+
+	if [[ -f "$filepath" ]] then
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "Server" "$SERVER"
+		# Get the file extension, lowercase
+		local ext=${${filepath:e}:l}
+		local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
+		write_fiel $client_fd "Content-Type" "$ct"
+		write_hend $client_fd
+		write_file $client_fd "$filepath"
+		# Close the listening socket opened by `ztcp -a $listen_fd`
+		write_end $client_fd
+		continue
+	elif [[ -d "$filepath" ]] then
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "Server" "$SERVER"
+		write_fiel $client_fd "Content-Type" "text/plain"
+		write_hend $client_fd
+		ls -1 -- "$filepath" >&$client_fd
+		write_line $client_fd ""
+		write_end $client_fd
+		continue
+	else
+		handle_not_found $client_fd "$filepath"
+		continue
+	fi
 }
 
 handle_client_error() {

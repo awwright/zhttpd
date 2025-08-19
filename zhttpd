@@ -138,6 +138,11 @@ handle_client() {
 	#handle_cgi $client_fd "./eng.cgi"
 	#continue;
 
+	if ! handle_method $client_fd $request_method "HEAD,GET"; then
+		# handle_method wrote the response, abort
+		continue;
+	fi
+
 	# Echo back the line with CRLF
 	local filepath=$(realpath "$HTROOT$request_target")
 	if [[ -z "$filepath" ]]; then
@@ -195,6 +200,32 @@ handle_not_found() {
 	write_hend $client_fd
 	write_line $client_fd "File Not Found: $3"
 	write_end $client_fd
+}
+
+# Verify that the request method is one of the allowed methods, return an error if not
+handle_method() {
+	local client_fd=$1
+	# request_method is guaranteed to follow the `token` syntax, so it won't contain whitespace or a comma
+	local request_method=$2
+	local allowed_methods=$3
+	local method_array=("${(@s/,/)allowed_methods//[[:space:]]/}")
+
+	# If the request method is in one of the allowed methods, continue without error
+	if [[ -n ${(M)method_array:#$request_method} ]]; then
+		return 0  # method found
+	fi
+
+	# Otherwise print an error
+	write_resl $client_fd 405 "Method Not Allowed"
+	write_fiel $client_fd "Server" "$SERVER"
+	write_fiel $client_fd "Content-Type" "text/plain"
+	write_fiel $client_fd "Allow" "${(j:, :)method_array}"
+	write_hend $client_fd
+	write_line $client_fd "Method not allowed: $request_method"
+	write_line $client_fd "Allowed methods: ${(j:, :)method_array}"
+	write_line $client_fd ""
+	write_end $client_fd
+	return 1
 }
 
 # <https://datatracker.ietf.org/doc/html/rfc3875>

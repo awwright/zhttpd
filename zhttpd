@@ -2,6 +2,7 @@
 
 # Exit on error e.g. unknown command
 set -e
+#set -x
 
 # Load ztcp, for opening TCP ports
 zmodload zsh/net/tcp
@@ -199,6 +200,7 @@ handle_client_error() {
 }
 
 # Verify that the request method is one of the allowed methods, return an error if not
+# Trace is often used to see how the origin server ends up receiving a request after it's passed through intermediaries
 handle_trace() {
 	local client_fd=$1
 	request_method=$2

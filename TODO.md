@@ -9,6 +9,10 @@
 	https://www.stunnel.org/static/stunnel.html#INETD-MODE
 * Multithreading support (one fork per request)
 
+Try some of these CGI scripts: https://gist.github.com/stokito/a9a2732ffc7982978a16e40e8d063c8f
+
+Use sysread to write data: https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#Builtins
+
 ## Code Modules
 
 ### Arguments parsing
@@ -93,48 +97,48 @@ base = <http://example.com/> ; resolve relative URIs against this URI
 # In the event of overlaps, the FIRST entry is evaluated
 
 # Serve static files
-<http://localhost/file/{id}>
+route <http://localhost/file/{id}>
 	serve = file
 	file_root = .
 	file_path = </file/{id}>
 
 # Serve requests by running a command
-<http://localhost/user/{id}>
+route <http://localhost/user/{id}>
 	serve = cgi_exec
 	cgi_exe = /var/www/localhost/cgi-bin/user
 	cgi_pathinfo = /{id}
 
 # Specify an old-style cgi-bin you can run scripts from
-<http://localhost/cgi-bin/{filename}.cgi{/pathinfo*}>
+route <http://localhost/cgi-bin/{filename}.cgi{/pathinfo*}>
 	serve = cgi_exec
 	cgi_exe = /var/www/localhost/cgi-bin/{filename}.cgi
 	cgi_pathinfo = {/pathinfo*}
 
 # Example for turning on a proxy to some-other-server
-http://some-other-server/{+path}
+route <http://some-other-server/{+path}>
 	serve = forward
 	forward_inbound = some-other-server
     forward_path = {+path}
 
 # Example for turning on a proxy to any server
-http://{authority}/{+path}
+route <http://{authority}/{+path}>
 	serve = forward
 	forward_inbound = {authority}
     forward_path = {+path}
 
-# Serve a page describing the status of the server
-http://localhost/about:status
+# Serve a page describing the status of the server, logs, etc
+route <http://localhost/about:status>
 	serve = status
 
 # Serve PHP files
-http://localhost/{+file}.php
+route <http://localhost/{+file}.php>
 	serve = cgi
 	cgi_exe = /usr/bin/php
 	cgi_pathinfo = /{+file}.php
 
 # Forward request to clients connected on the given port
 # If no clients are connected, this serves 503 Service Unavailable
-http://localhost/{+file}.php
+route <http://localhost/{+file}.php>
 	serve = hub
 	hub_listen_port = 57456
 	hub_request_form = origin-form

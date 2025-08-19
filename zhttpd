@@ -9,9 +9,6 @@ zmodload zsh/net/tcp
 # Load zparseopts
 zmodload zsh/zutil
 
-# This seems to be required to load the function
-autoload -U tcp_proxy
-
 # Set server parameters
 PORT=8080
 HOST=127.0.0.1

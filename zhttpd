@@ -109,6 +109,12 @@ handle_client() {
 		return
 	fi
 
+	# If this is a TRACE request, handle this special
+	if [[ $request_method == "TRACE" ]]; then
+		handle_trace $client_fd $request_method $request_target $request_http_version
+		return
+	fi
+
 	# Read until end of request
 	while true; do
 		local request_field=
@@ -140,7 +146,7 @@ handle_client() {
 
 	if ! handle_method $client_fd $request_method "HEAD,GET"; then
 		# handle_method wrote the response, abort
-		continue;
+		return;
 	fi
 
 	# Echo back the line with CRLF
@@ -190,6 +196,34 @@ handle_client_error() {
 	write_line $client_fd "zhttpd error #$2"
 	write_line $client_fd "$3"
 	write_end $client_fd
+}
+
+# Verify that the request method is one of the allowed methods, return an error if not
+handle_trace() {
+	local client_fd=$1
+	request_method=$2
+	request_target=$3
+	request_http_version=$4
+	write_resl $client_fd 200 "OK"
+	write_fiel $client_fd "Server" "$SERVER"
+	write_fiel $client_fd "Content-Type" "application/http"
+	write_fiel $client_fd "Allow" "${(j:, :)method_array}"
+	write_hend $client_fd
+	write_line $client_fd "$request_method $request_target $request_http_version"
+
+	# Read until end of request
+	while true; do
+		local request_field=
+		local empty=
+		read -rsd $CR request_field <&$client_fd || true
+		read -rsd $LF empty <&$client_fd || true
+		write_line $client_fd "$request_field"
+		if [[ -n "$empty" ]]; then break; fi
+		# Stop parsing at first blank line
+		if [[ -z "$request_field" ]]; then break; fi
+	done
+	write_end $client_fd
+	return 1
 }
 
 handle_not_found() {

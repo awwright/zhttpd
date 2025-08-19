@@ -245,6 +245,7 @@ handle_serve_file() {
 	fi
 
 	if [[ -f "$filepath" ]] then
+		# If a file, serve the file
 		write_resl $client_fd 200 "OK"
 		write_fiel $client_fd "Server" "$SERVER"
 		# Get the file extension, lowercase
@@ -257,6 +258,7 @@ handle_serve_file() {
 		write_end $client_fd
 		continue
 	elif [[ -d "$filepath" ]] then
+		# If a directory, list the directory contents
 		write_resl $client_fd 200 "OK"
 		write_fiel $client_fd "Server" "$SERVER"
 		write_fiel $client_fd "Content-Type" "text/plain"
@@ -266,7 +268,14 @@ handle_serve_file() {
 		write_end $client_fd
 		continue
 	else
-		handle_not_found $client_fd "$filepath"
+		# Ignore other types of files
+		# If a directory, list the directory contents
+		write_resl $client_fd 403 "Forbidden"
+		write_fiel $client_fd "Server" "$SERVER"
+		write_fiel $client_fd "Content-Type" "text/plain"
+		write_hend $client_fd
+		write_line $client_fd "Cannot display file: $filepath"
+		write_end $client_fd
 		continue
 	fi
 }

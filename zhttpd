@@ -109,8 +109,7 @@ handle_client() {
 
 	# If this is a TRACE request, handle this special
 	if [[ $request_method == "TRACE" ]]; then
-		handle_trace $client_fd $request_method $request_target $request_http_version
-		return
+		handle_trace $client_fd $request_method $request_target $request_http_version || continue
 	fi
 
 	# Read until end of request
@@ -225,23 +224,15 @@ handle_serve_file() {
 	local request_method=$2
 	local request_target=$3
 
-	if ! handle_method $client_fd $request_method "HEAD,GET"; then
-		# handle_method wrote the response, abort
-		return;
-	fi
+	handle_method $client_fd $request_method "HEAD,GET" || continue
 
 	# Echo back the line with CRLF
 	local filepath=$(realpath "$HTROOT$request_target")
 	if [[ -z "$filepath" ]]; then
 		handle_not_found $client_fd "$filepath"
-		continue
-	fi
-	if [[ !  "$filepath" = "$HTROOT"* ]]; then
+	elif [[ !  "$filepath" = "$HTROOT"* ]]; then
 		handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
-		continue;
-	fi
-
-	if [[ -f "$filepath" ]] then
+	elif [[ -f "$filepath" ]] then
 		# If a file, serve the file
 		write_resl $client_fd 200 "OK"
 		write_fiel $client_fd "Server" "$SERVER"
@@ -253,7 +244,6 @@ handle_serve_file() {
 		write_file $client_fd "$filepath"
 		# Close the listening socket opened by `ztcp -a $listen_fd`
 		write_end $client_fd
-		continue
 	elif [[ -d "$filepath" ]] then
 		# If a directory, list the directory contents
 		write_resl $client_fd 200 "OK"
@@ -263,7 +253,6 @@ handle_serve_file() {
 		ls -1 -- "$filepath" >&$client_fd
 		write_line $client_fd ""
 		write_end $client_fd
-		continue
 	else
 		# Ignore other types of files
 		# If a directory, list the directory contents
@@ -273,7 +262,6 @@ handle_serve_file() {
 		write_hend $client_fd
 		write_line $client_fd "Cannot display file: $filepath"
 		write_end $client_fd
-		continue
 	fi
 }
 

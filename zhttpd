@@ -23,10 +23,10 @@ LF=$'\n'
 CRLF=$'\r\n'
 SERVER="zhttpd/0.0.0 (<https://github.com/awwright/zhttpd>) zsh/$(zsh --version|cut -c 5-)"
 MIME_TYPES_PATH="/etc/apache2/mime.types"
+typeset -A ext_mediatype
 DEFAULT_MEDIA_TYPE="application/octet-stream"
 
 main() {
-	typeset -A ext_mediatype
 	if [[ -f "$MIME_TYPES_PATH" ]]; then
 		while IFS=$'\t ' read -r mt extensions; do
 			# Skip blank lines and comments
@@ -144,48 +144,7 @@ handle_client() {
 
 	#handle_cgi $client_fd "./eng.cgi"
 	#continue;
-
-	if ! handle_method $client_fd $request_method "HEAD,GET"; then
-		# handle_method wrote the response, abort
-		return;
-	fi
-
-	# Echo back the line with CRLF
-	local filepath=$(realpath "$HTROOT$request_target")
-	if [[ -z "$filepath" ]]; then
-		handle_not_found $client_fd "$filepath"
-		continue
-	fi
-	if [[ !  "$filepath" = "$HTROOT"* ]]; then
-		handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
-		continue;
-	fi
-
-	if [[ -f "$filepath" ]] then
-		write_resl $client_fd 200 "OK"
-		write_fiel $client_fd "Server" "$SERVER"
-		# Get the file extension, lowercase
-		local ext=${${filepath:e}:l}
-		local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
-		write_fiel $client_fd "Content-Type" "$ct"
-		write_hend $client_fd
-		write_file $client_fd "$filepath"
-		# Close the listening socket opened by `ztcp -a $listen_fd`
-		write_end $client_fd
-		continue
-	elif [[ -d "$filepath" ]] then
-		write_resl $client_fd 200 "OK"
-		write_fiel $client_fd "Server" "$SERVER"
-		write_fiel $client_fd "Content-Type" "text/plain"
-		write_hend $client_fd
-		ls -1 -- "$filepath" >&$client_fd
-		write_line $client_fd ""
-		write_end $client_fd
-		continue
-	else
-		handle_not_found $client_fd "$filepath"
-		continue
-	fi
+	handle_serve_file $client_fd $request_method $request_target
 }
 
 handle_client_error() {
@@ -262,6 +221,54 @@ handle_method() {
 	write_line $client_fd ""
 	write_end $client_fd
 	return 1
+}
+
+handle_serve_file() {
+	local client_fd=$1
+	local request_method=$2
+	local request_target=$3
+
+	if ! handle_method $client_fd $request_method "HEAD,GET"; then
+		# handle_method wrote the response, abort
+		return;
+	fi
+
+	# Echo back the line with CRLF
+	local filepath=$(realpath "$HTROOT$request_target")
+	if [[ -z "$filepath" ]]; then
+		handle_not_found $client_fd "$filepath"
+		continue
+	fi
+	if [[ !  "$filepath" = "$HTROOT"* ]]; then
+		handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
+		continue;
+	fi
+
+	if [[ -f "$filepath" ]] then
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "Server" "$SERVER"
+		# Get the file extension, lowercase
+		local ext=${${filepath:e}:l}
+		local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
+		write_fiel $client_fd "Content-Type" "$ct"
+		write_hend $client_fd
+		write_file $client_fd "$filepath"
+		# Close the listening socket opened by `ztcp -a $listen_fd`
+		write_end $client_fd
+		continue
+	elif [[ -d "$filepath" ]] then
+		write_resl $client_fd 200 "OK"
+		write_fiel $client_fd "Server" "$SERVER"
+		write_fiel $client_fd "Content-Type" "text/plain"
+		write_hend $client_fd
+		ls -1 -- "$filepath" >&$client_fd
+		write_line $client_fd ""
+		write_end $client_fd
+		continue
+	else
+		handle_not_found $client_fd "$filepath"
+		continue
+	fi
 }
 
 # <https://datatracker.ietf.org/doc/html/rfc3875>

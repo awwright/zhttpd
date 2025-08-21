@@ -145,3 +145,27 @@ route <http://localhost/{+file}.php>
 	hub_request_uri = http://localhost/{+file}.php
 ```
 
+## Listening Modes
+
+### Load Balancer/Gateway Hub
+
+Usage:
+
+```
+./zhttpd \
+	--hub hub.example.com:175 \
+	--hub-key client.key
+```
+
+Connect to a load balancer and receive requests through that connection.
+
+Offer plaintext modes, TLS modes, and client-authenticated TLS modes.
+
+Automatically make a new connection.
+
+### TLS configuration
+
+- Support listening on a TLS connection.
+- Automatically create a TLS certificate, if necessary.
+- Save the genrated TLS certificate to system certificate store, if desired
+- Get certificate signed by the appropriate authorities, if possible

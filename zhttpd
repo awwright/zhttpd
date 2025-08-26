@@ -138,7 +138,7 @@ handle_client() {
 		continue;
 	fi
 
-	#handle_cgi $client_fd "./eng.cgi"
+	#handle_cgi $client_fd "tests/env.cgi" "$request_target"
 	#continue;
 	handle_serve_file $client_fd $request_method $request_target
 }
@@ -272,6 +272,7 @@ handle_serve_file() {
 handle_cgi() {
 	local client_fd=$1
 	local cgi_cmd=$2
+	local path_info=$3
 	local cgi_response_field=
 	local empty=
 	local status_code=500
@@ -294,7 +295,7 @@ handle_cgi() {
 		cat >&$client_fd
 		write_end $client_fd
 		break
-	done < <($cgi_cmd)
+	done < <(env GATEWAY_INTERFACE=CGI/1.1 PATH_INFO="$path_info" SERVER_SOFTWARE="$SERVER" $cgi_cmd)
 	debug $client_fd "Sent off CGI response"
 }
 

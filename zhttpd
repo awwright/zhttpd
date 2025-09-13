@@ -138,9 +138,11 @@ handle_client() {
 		continue;
 	fi
 
-	#handle_cgi $client_fd "tests/env.cgi" "$request_target"
-	#continue;
-	handle_serve_file $client_fd $request_method $request_target
+	if [[ -n $HANDLER_CGI_TARGET ]]; then
+		handle_cgi $client_fd "$HANDLER_CGI_TARGET" "$request_target"
+	else
+		handle_serve_file $client_fd $request_method $request_target
+	fi
 }
 
 handle_client_error() {
@@ -274,28 +276,98 @@ handle_cgi() {
 	local cgi_cmd=$2
 	local path_info=$3
 	local cgi_response_field=
+	local cgi_field_name=
+	local cgi_field_value=
 	local empty=
-	local status_code=500
+	local response_status_code=200
+	local response_status_reason="OK"
+	declare -A response_headers
+	local content_type="text/plain"
+
+	typeset -A cgi_env_vars
+	cgi_env_vars=(
+		"AUTH_TYPE" ""
+		"CONTENT_LENGTH" ""
+		"CONTENT_TYPE" ""
+		"GATEWAY_INTERFACE" "CGI/1.1"
+		"PATH_INFO" ""
+		"PATH_TRANSLATED" ""
+		"QUERY_STRING" ""
+		"REMOTE_ADDR" ""
+		"REMOTE_HOST" ""
+		"REMOTE_IDENT" ""
+		"REMOTE_USER" ""
+		"REQUEST_METHOD" ""
+		"SCRIPT_NAME" ""
+		"SERVER_NAME" ""
+		"SERVER_PORT" ""
+		"SERVER_PROTOCOL" "HTTP/1.0"
+		"SERVER_SOFTWARE" "$SERVER"
+	)
+	#typeset -a env_pairs
+	#for ((i=1; i<=${#cgi_env_vars}; i+=2)); do
+	#env_pairs+=("${cgi_env_vars[$i]}=${cgi_env_vars[$i+1]}")
+	#done
+	#echo $env_pairs env
+
 	while true; do
 		while true; do
 			read -rsd $CR cgi_response_field || true
 			read -rsd $LF empty || true
-			if [[ -n "$empty" ]]; then handle_client_error $client_fd $LINENO "Expected LF"; break; fi
+			if [[ -n "$empty" ]]; then
+				handle_client_error $client_fd $LINENO "Expected LF"
+				break
+			fi
 			# Stop parsing at first blank line
-			if [[ -z "$cgi_response_field" ]]; then break; fi
-			if [[ "$cgi_response_field" =~ "^[Ss][Tt][Aa][Tt][Uu][Ss]:[ 	]*" ]]; then
-				status_code=200
+			if [[ -z "$cgi_response_field" ]]; then
+				break
+			fi
+			cgi_field_name=${cgi_response_field%%:*}
+			cgi_field_value=${cgi_response_field#*:}
+			cgi_field_value=${cgi_field_value##*[[:space:]]}
+			# Convert field name to lowercase, being case-insensitive
+			cgi_field_name=${(L)cgi_field_name}
+			# Handle required fields
+			if [[ "$cgi_field_name" == "content-type" ]]; then
+				content_type="$cgi_field_value"
+			elif [[ "$cgi_field_name" == "content-location" ]]; then
+				response_headers["Content-Location"]="$cgi_field_value"
+			elif [[ "$cgi_field_name" == "status" ]]; then
+				# Status line format: "NNN Reason Phrase"
+				response_status_code=${cgi_field_value%% *}
+				response_status_reason=${cgi_field_value#* }
+				# Validate status code is numeric and reasonable
+				if [[ ! "$response_status_code" =~ ^[0-9]{3}$ ]] || (( response_status_code < 100 || response_status_code > 599 )); then
+					response_status_code=500
+					response_status_reason="Internal Server Error"
+				fi
+			else
+				# Store other headers with proper capitalization
+				debug $client_fd "$cgi_response_field"
+				# Store HTTP header, normalize the field name by lowercasing it
+				response_headers["${cgi_field_name:l}"]="$cgi_field_value"
 			fi
 			debug $client_fd "Have CGI response field: $cgi_response_field"
 		done
+		# Great, we've got the response fields, now send them
 		debug $client_fd "Have CGI response body"
-		write_resl $client_fd 200 "OK"
-		write_fiel $client_fd "content-type" "text/plain"
+		write_resl $client_fd $response_status_code "$response_status_reason"
+		write_fiel $client_fd "Content-Type" "$content_type"
+		if [[ -n "${response_headers[Content-Location]}" ]]; then
+			write_fiel $client_fd "Content-Location" "${response_headers[Content-Location]}"
+		fi
+		# Write any additional headers
+		for header_name in ${(k)response_headers}; do
+			[[ "$header_name" != "Content-Location" ]] && write_fiel $client_fd "$header_name" "${response_headers[$header_name]}"
+		done
 		write_hend $client_fd
+		# Pass through the body
 		cat >&$client_fd
 		write_end $client_fd
 		break
-	done < <(env GATEWAY_INTERFACE=CGI/1.1 PATH_INFO="$path_info" SERVER_SOFTWARE="$SERVER" $cgi_cmd)
+	done < <(env $cgi_cmd)
+	# PHP doesn't like any of these defined and I don't know why
+	#done < <(env GATEWAY_INTERFACE=CGI/1.1 PATH_INFO="$path_info" SERVER_SOFTWARE="$SERVER" $cgi_cmd)
 	debug $client_fd "Sent off CGI response"
 }
 
@@ -347,37 +419,45 @@ debug() {
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 [options]"
-    echo "Options:"
-    echo "  -?, --help         Display this help message"
-    echo "  --version          Print version"
-    echo "  -p, --port=<port>      Listen for HTTP requests on <port>"
-    exit 1
+	echo "Usage: $0 [options]"
+	echo "Options:"
+	echo "  -?, --help         Display this help message"
+	echo "  --version          Print version"
+	echo "  -p, --port=<port>  Listen for HTTP requests on <port>"
+	echo "  --cgi=<path>       Forward requests to an invocation of <path>"
+	exit 1
 }
 
-zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port'  || {
-    echo ""
-    usage
+zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port' '-cgi:=opt_cgi'  || {
+	echo ""
+	usage
 	exit 1
 }
 
 # Handle help option
 if [[ -n $opt_help ]]; then
-    usage
+	usage
 	exit
 fi
 
 # Print server version if --version is specified.
 # This is the same string sent in the Server header.
 if [[ -n $opt_version ]]; then
-    echo $SERVER
+	echo $SERVER
 	exit
 fi
 
 # Trim the leading =, zsh seems to allow --port8080 like a madman
 if [[ -n "${opt_port[2]}" && "${opt_port[2]//=}" =~ '^[0-9]+$' ]]; then
-    PORT=$MATCH
+	PORT=$MATCH
 fi
+
+# Trim --cgi=
+if [[ -n "${opt_cgi[2]}" && "${opt_cgi[2]//=}" =~ '^.+$' ]]; then
+	HANDLER_CGI_TARGET=$MATCH
+fi
+
+typeset
 
 # Run the main event loop
 # This is just for code aesthetics so that the main loop can be defined

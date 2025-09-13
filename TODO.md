@@ -57,7 +57,36 @@ Connect to a load balancer or other gateway and receive HTTP requests from it.
 
 Use the given TLS key to authenticate to the hub
 
-## Routing/Serving Options
+## File Serving Options
+
+### `--fileroot <path>`
+
+Serve file out of the given `<path>`
+
+### `--filedefault=<filename>`
+
+If the resource is a directory, serve `<filename>` out of that directory.
+
+### `--filelisting`
+
+If the resource is a directory, provide a listing of the files in the directory. `--filedefault` takes precedence, if that file exists.
+
+## CGI Routing Options
+
+### `--cgi-prefix=<uri>`
+
+Call the CGI for URIs beginning with the given path
+
+### `--cgi=<filepath>`
+
+Execute the file at the given `<filepath>` to respond to the request.
+Sends CGI environment variables for request headers and reads headers in STDOUT for the response.
+
+### `--cgi-env=<env>`
+
+Call the given CGI with the provivded environment variable. e.g. `zhttpd --cgi=/bin/php-cgi --cgi-env=CONF=/etc/program.ini`
+
+## Custom Routing Options
 
 ### `-d`
 
@@ -133,7 +162,8 @@ route <http://localhost/about:status>
 # Serve PHP files
 route <http://localhost/{+file}.php>
 	serve = cgi
-	cgi_exe = /usr/bin/php
+	cgi_exe = /usr/bin/php-cgi
+	cgi_env = CONFIG_PATH=/etc/foo.conf
 	cgi_pathinfo = /{+file}.php
 
 # Forward request to clients connected on the given port

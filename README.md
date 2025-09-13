@@ -19,7 +19,7 @@ Features:
 ```
 zhttpd --help
 zhttpd --version
-zhttpd [--port <port>]
+zhttpd [--port <port>] [--cgi=<filepath>]
 ```
 
 ## Installation

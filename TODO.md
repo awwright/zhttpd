@@ -86,6 +86,10 @@ Sends CGI environment variables for request headers and reads headers in STDOUT 
 
 Call the given CGI with the provivded environment variable. e.g. `zhttpd --cgi=/bin/php-cgi --cgi-env=CONF=/etc/program.ini`
 
+### `--cgi-arg=<arg>`
+
+Call the CGI given from the last `--cgi` argument with the given `<arg>` as an argument. May be specified multiple times as necessary.
+
 ## Custom Routing Options
 
 ### `-d`

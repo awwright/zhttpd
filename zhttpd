@@ -73,7 +73,7 @@ main() {
 				# If read returns nonzero, this means EOF was reached, so close the file descriptor
 				# `exec {fd}>&-` closes the fd from the coprocess, so that the number can be reused
 				read out <&$fd || { unset "listen_fd_child[$fd]"; exec {fd}>&- }
-				#echo fd=$fd out=$out
+				echo fd=$fd out=$out
 			fi
 		done
 	done

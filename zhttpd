@@ -6,6 +6,8 @@ set -e
 
 # Load ztcp, for opening TCP ports
 zmodload zsh/net/tcp
+# Load zselect, for testing which file descriptors have activity
+zmodload zsh/zselect
 # Load zparseopts
 zmodload zsh/zutil
 
@@ -57,11 +59,23 @@ main() {
 	# TODO: use zselect
 	# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
 	while true; do
-		# Wait for a connection on $listen_fd
-		# This command stores the fd of the client connection socket in $REPLY
-		ztcp -a $listen_fd
-		local client_fd=$REPLY
-		handle_client $client_fd
+		#echo zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
+		zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
+		for fd in ${(k)ready_fds}; do
+			if [[ $fd == $listen_fd ]]; then
+				# This will kick off a subprocess in a way that will allow reading and writing to it directly
+				coproc handle_client $client_fd
+				# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
+				exec {fd}<& p
+				listen_fd_child[$fd]="$fd"
+			else
+				# This must be a message from a child process to be handled
+				# If read returns nonzero, this means EOF was reached, so close the file descriptor
+				# `exec {fd}>&-` closes the fd from the coprocess, so that the number can be reused
+				read out <&$fd || { unset "listen_fd_child[$fd]"; exec {fd}>&- }
+				#echo fd=$fd out=$out
+			fi
+		done
 	done
 
 	# Close the listening socket opened by `ztcp -l $PORT`
@@ -71,6 +85,11 @@ main() {
 
 # New function to handle a single client connection, including persistent requests
 handle_client() {
+	# Wait for a connection on $listen_fd
+	# This command stores the fd of the client connection socket in $REPLY
+	ztcp -a $listen_fd
+	local client_fd=$REPLY
+
 	# request-line = method SP request-target SP HTTP-version
 	local request_method=
 	read -rsd ' ' request_method <&$client_fd
@@ -324,7 +343,7 @@ handle_cgi() {
 			fi
 			cgi_field_name=${cgi_response_field%%:*}
 			cgi_field_value=${cgi_response_field#*:}
-			cgi_field_value=${cgi_field_value##*[[:space:]]}
+			cgi_field_value=${cgi_field_value}
 			# Convert field name to lowercase, being case-insensitive
 			cgi_field_name=${(L)cgi_field_name}
 			# Handle required fields
@@ -345,7 +364,7 @@ handle_cgi() {
 				# Store other headers with proper capitalization
 				debug $client_fd "$cgi_response_field"
 				# Store HTTP header, normalize the field name by lowercasing it
-				response_headers["${cgi_field_name:l}"]="$cgi_field_value"
+				response_headers[${cgi_field_name:l}]="$cgi_field_value"
 			fi
 			debug $client_fd "Have CGI response field: $cgi_response_field"
 		done
@@ -360,6 +379,7 @@ handle_cgi() {
 		for header_name in ${(k)response_headers}; do
 			[[ "$header_name" != "Content-Location" ]] && write_fiel $client_fd "$header_name" "${response_headers[$header_name]}"
 		done
+		write_fiel $client_fd "Server" "$SERVER"
 		write_hend $client_fd
 		# Pass through the body
 		cat >&$client_fd
@@ -407,8 +427,6 @@ write_file() {
 write_end() {
 	local client_fd=$1
 	debug $client_fd "[End]"
-	# Ensure that all data on the incoming buffer is read, otherwise this will send RST
-	local remaining=
 	ztcp -c $client_fd
 }
 
@@ -456,8 +474,6 @@ fi
 if [[ -n "${opt_cgi[2]}" && "${opt_cgi[2]//=}" =~ '^.+$' ]]; then
 	HANDLER_CGI_TARGET=$MATCH
 fi
-
-typeset
 
 # Run the main event loop
 # This is just for code aesthetics so that the main loop can be defined

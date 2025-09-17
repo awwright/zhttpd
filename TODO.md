@@ -49,6 +49,10 @@ Listen on TCP port number `<port>`.
 
 Listen on Unix sock file `<sockfile>`.
 
+### `--stdio`
+
+Read STDIN and respond on STDOUT. Logs are written to STDERR. For use with inetd and similar programs.
+
 ### `--hub <host:port>`
 
 Connect to a load balancer or other gateway and receive HTTP requests from it.

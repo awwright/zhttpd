@@ -57,6 +57,8 @@ Read STDIN and respond on STDOUT. Logs are written to STDERR. For use with inetd
 
 Connect to a load balancer or other gateway and receive HTTP requests from it.
 
+Hubs typically listen on 175 (one-byte compliment of 80) or 57456 (two-byte compliment of 8080).
+
 ### `--hub-key <file>`
 
 Use the given TLS key to authenticate to the hub

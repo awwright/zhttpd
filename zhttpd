@@ -12,10 +12,7 @@ zmodload zsh/zselect
 zmodload zsh/zutil
 
 # Set server parameters
-PORT=8080
-HOST=127.0.0.1
 HTROOT="$(pwd)"
-# TODO: if no -p is specified and 8080 is taken, then try again on a random port
 
 CR=$'\r'
 LF=$'\n'
@@ -24,8 +21,12 @@ SERVER="zhttpd/0.0.0 (<https://github.com/awwright/zhttpd>) zsh/$(zsh --version|
 MIME_TYPES_PATH="/etc/apache2/mime.types"
 typeset -A ext_mediatype
 DEFAULT_MEDIA_TYPE="application/octet-stream"
+CMDLINE="$0"
 
 main() {
+	local listen_fd=
+	local hub_fd=
+
 	if [[ -f "$MIME_TYPES_PATH" ]]; then
 		while IFS=$'\t ' read -r mt extensions; do
 			# Skip blank lines and comments
@@ -40,27 +41,39 @@ main() {
 		echo "Error: mime.types file not found" >&2
 	fi
 
-	# Create a TCP listening socket
-	# This command stores the fd of the socket in $REPLY
-	# This should be closed when finished
-	ztcp -l $PORT
-	local listen_fd=$REPLY
+	if [[ -n $PORT ]]; then
+		# Create a TCP listening socket
+		# This command stores the fd of the socket in $REPLY
+		# This should be closed when finished
+		ztcp -l $PORT
+		listen_fd=$REPLY
 
-	debug main "listen_fd=$listen_fd"
-	if (( $listen_fd == 0 )); then
-		print "Failed to bind to port $PORT"
-		exit 1
+		debug main "listen_fd=$listen_fd"
+		if (( $listen_fd == 0 )); then
+			print "Failed to bind to port $PORT"
+			exit 1
+		fi
+
+		print "Server listening on $HOST:$PORT..."
+		print "http://$HOST:$PORT/"
 	fi
 
-	print "Server listening on $HOST:$PORT..."
-	print "http://$HOST:$PORT/"
+	if [[ -n $HUB_ADDR ]]; then
+		# Spin up a few connections to the Hub
+		for i in {1..4}; do
+			coproc handle_hub_connect ${HUB_ADDR%:*} ${HUB_ADDR##*:}
+			# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
+			exec {fd}<& p
+			listen_fd_child[$fd]="$fd"
+		done
+	fi
 
 	# Main event loop
 	# TODO: use zselect
 	# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
 	while true; do
 		#echo zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
-		zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
+		zselect -r $listen_fd $hub_fd ${(k)listen_fd_child} -A ready_fds
 		for fd in ${(k)ready_fds}; do
 			if [[ $fd == $listen_fd ]]; then
 				# This will kick off a subprocess in a way that will allow reading and writing to it directly
@@ -72,8 +85,14 @@ main() {
 				# This must be a message from a child process to be handled
 				# If read returns nonzero, this means EOF was reached, so close the file descriptor
 				# `exec {fd}>&-` closes the fd from the coprocess, so that the number can be reused
-				read out <&$fd || { unset "listen_fd_child[$fd]"; exec {fd}>&- }
-				echo fd=$fd out=$out
+				if read out <&$fd; then
+					# Forward log output to the console
+					echo "child($fd) $out"
+				else
+					# This connection is now closed
+					unset "listen_fd_child[$fd]"
+					exec {fd}>&-
+				fi
 			fi
 		done
 	done
@@ -88,7 +107,26 @@ handle_client() {
 	# Wait for a connection on $listen_fd
 	# This command stores the fd of the client connection socket in $REPLY
 	ztcp -a $listen_fd
-	local client_fd=$REPLY
+	echo "REPLY=$REPLY"
+	handle_stream $REPLY
+}
+
+handle_hub_connect() {
+	local hub_host=$1
+	local hub_port=$2
+	while true; do
+		echo ztcp ${HUB_ADDR%:*} ${HUB_ADDR##*:}
+		ztcp $hub_host $hub_port
+		hub_fd=$REPLY
+		echo "opened connection on fd=$hub_fd"
+		handle_stream $hub_fd
+		echo "dropped connection on $hub_fd, restarting"
+	done
+}
+
+handle_stream() {
+	local client_fd=$1
+	echo "handle_strem client_fd=$client_fd"
 
 	# request-line = method SP request-target SP HTTP-version
 	local request_method=
@@ -437,16 +475,17 @@ debug() {
 
 # Function to display usage
 usage() {
-	echo "Usage: $0 [options]"
+	echo "Usage: $CMDLINE [options]"
 	echo "Options:"
 	echo "  -?, --help         Display this help message"
 	echo "  --version          Print version"
+	echo "  --hub=<address>    Connect to <addr> for HTTP requests"
 	echo "  -p, --port=<port>  Listen for HTTP requests on <port>"
 	echo "  --cgi=<path>       Forward requests to an invocation of <path>"
 	exit 1
 }
 
-zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port' '-cgi:=opt_cgi'  || {
+zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port' '-hub:=hub_addr' '-cgi:=opt_cgi'  || {
 	echo ""
 	usage
 	exit 1
@@ -470,9 +509,22 @@ if [[ -n "${opt_port[2]}" && "${opt_port[2]//=}" =~ '^[0-9]+$' ]]; then
 	PORT=$MATCH
 fi
 
+# Trim the leading =, zsh seems to allow --port8080 like a madman
+if [[ -n "${hub_addr[2]}" && "${hub_addr[2]//=}" =~ '^[a-zA-Z0-9.]+:[0-9]+$' ]]; then
+	HUB_ADDR=$MATCH
+elif [[ -n "${hub_addr[2]}" && "${hub_addr[2]//=}" =~ '^[0-9]+$' ]]; then
+	HUB_ADDR=$MATCH
+fi
+
 # Trim --cgi=
 if [[ -n "${opt_cgi[2]}" && "${opt_cgi[2]//=}" =~ '^.+$' ]]; then
 	HANDLER_CGI_TARGET=$MATCH
+fi
+
+if [[ -z $PORT && -z $HUB_ADDR ]]; then
+	PORT=8080
+	HOST=127.0.0.1
+	# TODO: if no -p is specified and 8080 is taken, then try again on a random port
 fi
 
 # Run the main event loop

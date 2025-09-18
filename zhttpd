@@ -69,7 +69,6 @@ main() {
 	fi
 
 	# Main event loop
-	# TODO: use zselect
 	# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
 	while true; do
 		#echo zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds

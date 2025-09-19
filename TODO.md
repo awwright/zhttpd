@@ -209,3 +209,44 @@ Automatically make a new connection.
 - Automatically create a TLS certificate, if necessary.
 - Save the genrated TLS certificate to system certificate store, if desired
 - Get certificate signed by the appropriate authorities, if possible
+
+## Reverse Tunnel
+
+A reverse tunnel lets you host applications on a computer behind a firewall, and connect to the load balancer from behind the firewall.
+
+One instance runs next to the origin to act as the hub, and one instance runs from behind the NAT firewall.
+
+### Origin-side, inbound configuration
+
+On the side behind the firewall:
+
+```
+./zhttpd \
+	--hub hub.example.com:175 \
+	--hub-key client.key \
+	--pass-gateway localhost:8080
+```
+
+This will connect to the hub, then forward all requests received from the hub along to the origin server at localhost:8080.
+
+### User/gateway-side, outbound configuraton
+
+```
+./zhttpd \
+	--port 80
+	--pass-hub hub.example.com:175
+```
+
+This will setup a normal HTTP server on port 80, and a hub at port 175, then forward requests to origins connected on port 175.
+
+You can also use this command with inetd, xinetd, or launchd.
+Investigate of SO_REUSEPORT works so that multiple connections can be made.
+
+```
+# Run this for connections to port 175 or 57456
+# This will open a listener for HTTP connections on port 8080
+./zhttpd \
+	--port 8080
+	--hub-stdio
+	--hub-key client.key
+```

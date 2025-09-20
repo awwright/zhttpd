@@ -230,7 +230,7 @@ On the side behind the firewall:
 
 This will connect to the hub, then forward all requests received from the hub along to the origin server at localhost:8080.
 
-### User/gateway-side, outbound configuraton
+### User/gateway-side, outbound configuration
 
 ```
 ./zhttpd \

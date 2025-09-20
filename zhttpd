@@ -27,89 +27,6 @@ typeset -A ext_mediatype
 DEFAULT_MEDIA_TYPE="application/octet-stream"
 CMDLINE="$0"
 
-main() {
-	local listen_fd=
-	local hub_fd=
-
-	# TODO: Only load this if we will be serving files off the filesystem
-	if [[ -f "$MIME_TYPES_PATH" ]]; then
-		while IFS=$'\t ' read -r mt extensions; do
-			# Skip blank lines and comments
-			[[ -z $mt || $mt == '#'* ]] && continue
-			# Split extensions and map each to the MIME type
-			for ext in ${(s: :)extensions}; do
-				#echo "${ext:l} -> $mt"
-				ext_mediatype[${ext:l}]=$mt
-			done
-		done < "$MIME_TYPES_PATH"
-	else
-		echo "Error: mime.types file not found" >&2
-	fi
-
-	if [[ -n $PORT ]]; then
-		# Create a TCP listening socket
-		# This command stores the fd of the socket in $REPLY
-		# This should be closed when finished
-		ztcp -l $PORT || {
-			echo "Current processes using port $PORT:"
-			lsof -iTCP -sTCP:LISTEN -n -P | grep --color=never -e COMMAND -e ":$PORT"
-			exit 1
-		}
-		listen_fd=$REPLY
-
-		debug main "listen_fd=$listen_fd"
-		if (( $listen_fd == 0 )); then
-			print "Failed to bind to port $PORT"
-			exit 1
-		fi
-
-		print "Server listening on $HOST:$PORT..."
-		print "http://$HOST:$PORT/"
-	fi
-
-	if [[ -n $HUB_ADDR ]]; then
-		# Spin up a few connections to the Hub
-		for i in {1..4}; do
-			coproc handle_hub_connect ${HUB_ADDR%:*} ${HUB_ADDR##*:}
-			# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
-			exec {fd}<& p
-			listen_fd_child[$fd]="$fd"
-		done
-	fi
-
-	# Main event loop
-	# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
-	while true; do
-		#echo zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
-		zselect -r $listen_fd $hub_fd ${(k)listen_fd_child} -A ready_fds
-		for fd in ${(k)ready_fds}; do
-			if [[ $fd == $listen_fd ]]; then
-				# This will kick off a subprocess in a way that will allow reading and writing to it directly
-				coproc handle_client $client_fd
-				# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
-				exec {fd}<& p
-				listen_fd_child[$fd]="$fd"
-			else
-				# This must be a message from a child process to be handled
-				# If read returns nonzero, this means EOF was reached, so close the file descriptor
-				# `exec {fd}>&-` closes the fd from the coprocess, so that the number can be reused
-				if read out <&$fd; then
-					# Forward log output to the console
-					echo "child($fd) $out"
-				else
-					# This connection is now closed
-					unset "listen_fd_child[$fd]"
-					exec {fd}>&-
-				fi
-			fi
-		done
-	done
-
-	# Close the listening socket opened by `ztcp -l $PORT`
-	# Otherwise it may be difficult to start this process back up listening on the same port
-	ztcp -c $listen_fd
-}
-
 # New function to handle a single client connection, including persistent requests
 handle_client() {
 	# Wait for a connection on $listen_fd
@@ -585,7 +502,83 @@ if [[ -z $PORT && -z $HUB_ADDR ]]; then
 	# TODO: if no -p is specified and 8080 is taken, then try again on a random port
 fi
 
-# Run the main event loop
-# This is just for code aesthetics so that the main loop can be defined
-# at the top of the file, and callee functions below it.
-main
+local listen_fd=
+local hub_fd=
+
+# TODO: Only load this if we will be serving files off the filesystem
+if [[ -f "$MIME_TYPES_PATH" ]]; then
+	while IFS=$'\t ' read -r mt extensions; do
+		# Skip blank lines and comments
+		[[ -z $mt || $mt == '#'* ]] && continue
+		# Split extensions and map each to the MIME type
+		for ext in ${(s: :)extensions}; do
+			#echo "${ext:l} -> $mt"
+			ext_mediatype[${ext:l}]=$mt
+		done
+	done < "$MIME_TYPES_PATH"
+else
+	echo "Error: mime.types file not found" >&2
+fi
+
+if [[ -n $PORT ]]; then
+	# Create a TCP listening socket
+	# This command stores the fd of the socket in $REPLY
+	# This should be closed when finished
+	ztcp -l $PORT || {
+		echo "Current processes using port $PORT:"
+		lsof -iTCP -sTCP:LISTEN -n -P | grep --color=never -e COMMAND -e ":$PORT"
+		exit 1
+	}
+	listen_fd=$REPLY
+
+	debug main "listen_fd=$listen_fd"
+	if (( $listen_fd == 0 )); then
+		print "Failed to bind to port $PORT"
+		exit 1
+	fi
+
+	print "Server listening on $HOST:$PORT..."
+	print "http://$HOST:$PORT/"
+fi
+
+if [[ -n $HUB_ADDR ]]; then
+	# Spin up a few connections to the Hub
+	for i in {1..4}; do
+		coproc handle_hub_connect ${HUB_ADDR%:*} ${HUB_ADDR##*:}
+		# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
+		exec {fd}<& p
+		listen_fd_child[$fd]="$fd"
+	done
+fi
+
+# Main event loop
+# <https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#The-zsh_002fzselect-Module>
+while true; do
+	#echo zselect -r $listen_fd ${(k)listen_fd_child} -A ready_fds
+	zselect -r $listen_fd $hub_fd ${(k)listen_fd_child} -A ready_fds
+	for fd in ${(k)ready_fds}; do
+		if [[ $fd == $listen_fd ]]; then
+			# This will kick off a subprocess in a way that will allow reading and writing to it directly
+			coproc handle_client $client_fd
+			# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
+			exec {fd}<& p
+			listen_fd_child[$fd]="$fd"
+		else
+			# This must be a message from a child process to be handled
+			# If read returns nonzero, this means EOF was reached, so close the file descriptor
+			# `exec {fd}>&-` closes the fd from the coprocess, so that the number can be reused
+			if read out <&$fd; then
+				# Forward log output to the console
+				echo "child($fd) $out"
+			else
+				# This connection is now closed
+				unset "listen_fd_child[$fd]"
+				exec {fd}>&-
+			fi
+		fi
+	done
+done
+
+# Close the listening socket opened by `ztcp -l $PORT`
+# Otherwise it may be difficult to start this process back up listening on the same port
+ztcp -c $listen_fd

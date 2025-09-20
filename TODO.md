@@ -1,13 +1,24 @@
 # To-do
 
 * Additional tests
-* Listen on random TCP port
-* Listen on socket file
-* Listen on stdio (for inetd)
-* Listen on hub socket file
+* Server on random TCP port
+* Server on socket file
+* Server on stdio (for inetd)
+* Server on hub socket file
+* Open socket and TCP listener for hub
+* Reverse-tunnel support (unencrypted)
+	* requires outbound-side hub listener
+	* Use ssh connection forwarding until encrypted tunnels are implemented,
+	  run `ssh -L 127.0.0.1:57456:127.0.0.1:57456 user@remote`
+* Reverse-tunnel support (encrypted)
+	* Use stunnel for outbound-side listener (emitter)
+	* Use s_client for inbound-side server (responder)
+* Serve index page if present
 * HTTP/1.1 support with chunked encoding
 * CGI environment variables
 * GitWeb CGI support (requires environment variables)
+* PHP support (direct all requests to a PHP script)
+* *.php file support (pass all .php files through a CGI)
 * Request forwarding for gateway/proxy use
 * Support for TLS if stunnel is installed (maybe openssl)
 	https://www.stunnel.org/static/stunnel.html#INETD-MODE

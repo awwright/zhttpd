@@ -460,6 +460,9 @@ usage() {
 	exit 1
 }
 
+# main entry point begins here
+
+# Parse arguments
 zparseopts -F '?=opt_help' '-help=opt_help' '-version=opt_version' 'p:=opt_port' '-port:=opt_port' '-hub:=hub_addr' '-cgi:=opt_cgi'  || {
 	echo ""
 	usage
@@ -505,6 +508,8 @@ fi
 local listen_fd=
 local hub_fd=
 
+# Configure request handlers
+
 # TODO: Only load this if we will be serving files off the filesystem
 if [[ -f "$MIME_TYPES_PATH" ]]; then
 	while IFS=$'\t ' read -r mt extensions; do
@@ -520,11 +525,21 @@ else
 	echo "Error: mime.types file not found" >&2
 fi
 
+if [[ -n $HUB_LISTEN_ADDR ]]; then
+	# A queue of fds that can process an HTTP request
+	HUB_ATTACHED_RESPONDERS=()
+	# Start a TCP server and collect responders
+
+fi
+
+# Start up request interfaces
+
 if [[ -n $PORT ]]; then
 	# Create a TCP listening socket
 	# This command stores the fd of the socket in $REPLY
 	# This should be closed when finished
 	ztcp -l $PORT || {
+		# If ztcp returns an error, it's likely because the port is occupied. Notify the user.
 		echo "Current processes using port $PORT:"
 		lsof -iTCP -sTCP:LISTEN -n -P | grep --color=never -e COMMAND -e ":$PORT"
 		exit 1
@@ -544,8 +559,9 @@ fi
 if [[ -n $HUB_ADDR ]]; then
 	# Spin up a few connections to the Hub
 	for i in {1..4}; do
+		# Create a coprocess, the fd for this coprocess will be stored in p
 		coproc handle_hub_connect ${HUB_ADDR%:*} ${HUB_ADDR##*:}
-		# Move the fd known as p to a new file descriptor so we can read messages from the coprocess
+		# Move the fd known as p to a new file descriptor so we can read messages from multiple coprocesses
 		exec {fd}<& p
 		listen_fd_child[$fd]="$fd"
 	done

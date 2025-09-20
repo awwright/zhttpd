@@ -1,5 +1,15 @@
 #!/bin/zsh
+
+# Exit if any command fails
 set -e
+
+# Kill all child processes of the current script
+cleanup() {
+    pkill -P $$ 2>/dev/null || true
+}
+trap cleanup EXIT
+trap cleanup INT
+
 start() {
 	# Start zhttpd as coprocess
 	coproc ./zhttpd
@@ -47,7 +57,7 @@ start() {
 }
 
 # Function to end the zhttpd coprocess
-end() {
+stop() {
 	if [[ -n $ZHTTPD_PID ]]; then
 		kill $ZHTTPD_PID 2>/dev/null
 		wait $ZHTTPD_PID 2>/dev/null
@@ -55,3 +65,12 @@ end() {
 	fi
 }
 
+# To test opening a port on a specific port number,
+# try our best to find an unused port number
+random_unused_port() {
+	local port
+	for i in 0...20; do
+		port=$(( ( RANDOM % (65535 - 1024 + 1) ) + 1024 ))
+		lsof -iTCP -sTCP:LISTEN -n -P | grep --color=never ":$port" || echo $port
+	done
+}

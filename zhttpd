@@ -10,6 +10,10 @@ zmodload zsh/net/tcp
 zmodload zsh/zselect
 # Load zparseopts
 zmodload zsh/zutil
+# Load sysread
+zmodload zsh/system
+# Load zstst
+zmodload zsh/stat
 
 # Set server parameters
 HTROOT="$(pwd)"
@@ -292,14 +296,20 @@ handle_serve_file() {
 		handle_client_error $client_fd $LINENO "Not in filepath: $filepath"
 	elif [[ -f "$filepath" ]] then
 		# If a file, serve the file
+		echo "open $filepath"
+		sysopen -r -u file_fd "$filepath"
+		zstat -f $file_fd -H stat
+		local file_size=${stat[size]}
 		write_resl $client_fd 200 "OK"
 		write_fiel $client_fd "Server" "$SERVER"
 		# Get the file extension, lowercase
 		local ext=${${filepath:e}:l}
 		local ct=${ext_mediatype[$ext]:-$DEFAULT_MEDIA_TYPE}
 		write_fiel $client_fd "Content-Type" "$ct"
+		write_rlen $client_fd $file_size
 		write_hend $client_fd
-		write_file $client_fd "$filepath"
+		write_fd $client_fd $file_fd $file_size
+		exec {file_fd}>&-
 		# Close the listening socket opened by `ztcp -a $listen_fd`
 		write_end $client_fd
 	elif [[ -d "$filepath" ]] then
@@ -442,7 +452,16 @@ write_fiel() {
 	# Todo: Verify that $client_fd is in the headers state
 	# Todo: Verify that $name follows `token`
 	# Todo: Verify that $value follows the header syntax
+	# TODO: Prohibit this method call for framing and connection headers, including Content-Length, Connection, etc
 	echo -n "$name: $value$CRLF" >&$client_fd
+}
+
+# Set remaining length in response body
+write_rlen() {
+	local client_fd=$1
+	local length=$2
+	# TODO: Verify this hasn't been written already, which would be a problem
+	write_fiel $1 "Content-Length" "$2"
 }
 
 write_hend() {
@@ -455,10 +474,45 @@ write_line() {
 	echo -n "$2$CRLF" >&$client_fd
 }
 
-write_file() {
+write_fd() {
 	local client_fd=$1
-	local file_path=$2
-	dd if="$file_path" >&$client_fd
+	local source_fd=$2
+	local write_len=$3
+	# Keep track of the total bytes written, ensure they match write_len by the end
+	typeset -i total_bytes=0
+	local buffer_size=8192
+	local count
+
+	# Validate inputs
+	if [[ -z $client_fd ]]; then return 1; fi
+	if [[ -z $source_fd ]]; then return 1; fi
+	if [[ -z $write_len ]]; then return 1; fi
+	# If nothing to write, then bail
+	if [[ $write_len -eq 0 ]]; then return; fi
+
+	while [[ $total_bytes -lt $write_len ]]; do
+		# Calculate remaining bytes to read
+		local bytes_to_read=$(( write_len - total_bytes < buffer_size ? write_len - total_bytes : buffer_size ))
+		# Read block from source_fd
+		# I'm told this might not read all bytes_to_read, so retry from the new offset if so.
+		# This will return 0 if it reaches EOF.
+		if ! sysread -c count -i $source_fd -o $client_fd -s $bytes_to_read; then
+			# Check if no data was read (EOF or error)
+			if [[ $count -eq 0 ]]; then
+				echo "Underflow: Only $total_bytes bytes available, expected $write_len" >&2
+				return 2
+			fi
+			echo "Error reading from source_fd $source_fd" >&2
+			return 2
+		fi
+		# Update total bytes
+		(( total_bytes += count ))
+	done
+	# Ensure exactly write_len bytes were written
+	if [[ $total_bytes -ne $write_len ]]; then
+		echo "Error: Wrote $total_bytes bytes, expected $write_len" >&2
+		return 2
+	fi
 }
 
 write_end() {

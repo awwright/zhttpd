@@ -1,6 +1,7 @@
 #!/bin/zsh
 run() {
 	local file=$1
+	# Strip two filename extensions off $file
 	local name=${file:r:r}
 	echo -n "→ $name\r"
 	if zsh $file; then

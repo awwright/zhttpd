@@ -49,7 +49,11 @@ main() {
 		# Create a TCP listening socket
 		# This command stores the fd of the socket in $REPLY
 		# This should be closed when finished
-		ztcp -l $PORT
+		ztcp -l $PORT || {
+			echo "Current processes using port $PORT:"
+			lsof -iTCP -sTCP:LISTEN -n -P | grep --color=never -e COMMAND -e ":$PORT"
+			exit 1
+		}
 		listen_fd=$REPLY
 
 		debug main "listen_fd=$listen_fd"

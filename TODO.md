@@ -1,17 +1,18 @@
 # To-do
 
-* Spec-compliant HTTP/1.1 HTTP server
-* Listen on a TCP port, unix sock file, inetd, or connect to and receive connections from a hub
-* Static file serving
-* CGI responses
+* Additional tests
+* Listen on random TCP port
+* Listen on socket file
+* Listen on stdio (for inetd)
+* Listen on hub socket file
+* HTTP/1.1 support with chunked encoding
+* CGI environment variables
+* GitWeb CGI support (requires environment variables)
 * Request forwarding for gateway/proxy use
 * Support for TLS if stunnel is installed (maybe openssl)
 	https://www.stunnel.org/static/stunnel.html#INETD-MODE
-* Multithreading support (one fork per request)
 
 Try some of these CGI scripts: https://gist.github.com/stokito/a9a2732ffc7982978a16e40e8d063c8f
-
-Use sysread to write data: https://zsh.sourceforge.io/Doc/Release/Zsh-Modules.html#Builtins
 
 ## Code Modules
 

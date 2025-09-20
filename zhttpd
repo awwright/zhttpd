@@ -31,6 +31,7 @@ main() {
 	local listen_fd=
 	local hub_fd=
 
+	# TODO: Only load this if we will be serving files off the filesystem
 	if [[ -f "$MIME_TYPES_PATH" ]]; then
 		while IFS=$'\t ' read -r mt extensions; do
 			# Skip blank lines and comments

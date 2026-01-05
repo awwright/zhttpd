@@ -1,10 +1,11 @@
 #!/bin/zsh
-exit 0;
 source libtest.zsh
 
 # Test HTTP server receiving requests from hub
-arbitrary_http_port=$(random_unused_port)
-arbitrary_hub_port=$(random_unused_port)
+# The ((RANDOM)) reseeds the random number generator because calling RANDOM in a subshell won't do that.
+# Otherwise both calls will generate the same number. I don't know how else to fix this.
+arbitrary_http_port=$(random_unused_port); ((RANDOM))
+arbitrary_hub_port=$(random_unused_port); ((RANDOM))
 zsh simplehub.zsh $arbitrary_http_port $arbitrary_hub_port &!
 HUB_PID=$!
 ../zhttpd --hub $arbitrary_hub_port >/dev/null &!

@@ -496,7 +496,13 @@ fi
 
 # Trim --cgi=
 if [[ -n "${opt_cgi[2]}" && "${opt_cgi[2]//=}" =~ '^.+$' ]]; then
-	HANDLER_CGI_TARGET=$MATCH
+	if [[ -f "$MATCH" ]]; then
+		HANDLER_CGI_TARGET=$MATCH
+	else
+
+		echo "Error: --cgi target $MATCH does not exist" >&2
+		exit;
+	fi
 fi
 
 if [[ -z $PORT && -z $HUB_ADDR ]]; then

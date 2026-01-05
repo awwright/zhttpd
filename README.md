@@ -37,8 +37,12 @@ Should work on most systems:
 
 ## Examples
 
+### Print CGI environment variables
+
+zhttpd --cgi test/env.cgi
+
 ### Gitweb
 
-This works on macOS with Git installed from Homebrew. For other systems, you will need to configure the path to the cgi:
+This works on macOS with Git installed from Homebrew (`brew install git`). For other systems, you will need to configure the path to the cgi:
 
-zhttpd --cgi /System/Volumes/Data/opt/homebrew/share/gitweb/gitweb.cgi
+zhttpd --cgi /opt/homebrew/share/gitweb/gitweb.cgi

@@ -267,8 +267,8 @@ handle_cgi() {
 	local cgi_field_name=
 	local cgi_field_value=
 	local empty=
-	local response_status_code=200
-	local response_status_reason="OK"
+	local response_status_code=
+	local response_status_reason=
 	declare -A response_headers
 	local content_type="text/plain"
 
@@ -301,13 +301,17 @@ handle_cgi() {
 	while true; do
 		while true; do
 			read -rsd $CR cgi_response_field || true
-			read -rsd $LF empty || true
+			read -rsd $LF empty || break
 			if [[ -n "$empty" ]]; then
 				handle_client_error $client_fd $LINENO "Expected LF"
 				break
 			fi
 			# Stop parsing at first blank line
 			if [[ -z "$cgi_response_field" ]]; then
+				if [[ -z "$response_status_code" ]]; then
+					response_status_code=200
+					response_status_reason="OK"
+				fi
 				break
 			fi
 			cgi_field_name=${cgi_response_field%%:*}
@@ -339,6 +343,11 @@ handle_cgi() {
 		done
 		# Great, we've got the response fields, now send them
 		debug $client_fd "Have CGI response body"
+		# If the status code was never set, not even the default 200 set at the empty line to begin the response body, then something went wrong
+		if [[ -z "$response_status_code" ]]; then
+			response_status_code=500
+			response_status_reason="Internal Server Error"
+		fi
 		write_resl $client_fd $response_status_code "$response_status_reason"
 		write_fiel $client_fd "Content-Type" "$content_type"
 		if [[ -n "${response_headers[Content-Location]}" ]]; then

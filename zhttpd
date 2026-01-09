@@ -263,6 +263,7 @@ handle_cgi() {
 	local client_fd=$1
 	local cgi_cmd=$2
 	local path_info=$3
+	local query_string=""
 	local cgi_response_field=
 	local cgi_field_name=
 	local cgi_field_value=
@@ -271,6 +272,11 @@ handle_cgi() {
 	local response_status_reason=
 	declare -A response_headers
 	local content_type="text/plain"
+
+	if [[ $path_info = *\?* ]]; then
+		query_string=${path_info#*\?}
+		path_info=${path_info%%\?*}
+	fi
 
 	typeset -A cgi_env_vars
 	cgi_env_vars=(
@@ -363,7 +369,7 @@ handle_cgi() {
 		cat >&$client_fd
 		write_end $client_fd
 		break
-	done < <(env $cgi_cmd)
+	done < <(env QUERY_STRING="$query_string" PATH_INFO="$path_info" $cgi_cmd)
 	# PHP doesn't like any of these defined and I don't know why
 	#done < <(env GATEWAY_INTERFACE=CGI/1.1 PATH_INFO="$path_info" SERVER_SOFTWARE="$SERVER" $cgi_cmd)
 	debug $client_fd "Sent off CGI response"
